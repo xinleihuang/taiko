@@ -4,6 +4,7 @@ var glob = require( 'glob' )
 var app = require('the-internet-express');
 
 var server = app.listen(3000, async () => {
+    console.log('** Running Taiko Examples **\n');
     var run = (f) => new Promise((resolve, reject) => {
         console.log(path.parse(f).name);
         var p = cp.exec('taiko ' + f);

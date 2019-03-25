@@ -11,13 +11,15 @@
 		"lint": "eslint bin/*.js lib/*.js test/*/*.js",
 		"doc-new": "documentation build lib/taiko.js -f md --shallow -o docs/index.md --markdown-toc=false && node docs/setup.js --new",
 		"doc": "documentation build lib/taiko.js -f md --shallow -o docs/index.md --markdown-toc=false && node docs/setup.js",
-		"test": "node test/unit-tests/taiko-test.js && npm run lint",
+		"unit-tests": "node test/unit-tests/taiko-test.js && npm run lint",
+		"examples": "cd examples && npm i && npm test && cd ..",
+		"test": "npm run unit-tests && npm run examples",
 		"test-functional": "cd test/functional-tests && npm install && npm test",
 		"install": "node lib/install.js",
 		"update-json-doc": "node build/updateJsonDoc.js"
 	},
 	"pre-commit": [
-		"test",
+		"unit-tests",
 		"update-json-doc"
 	],
 	"repository": {
