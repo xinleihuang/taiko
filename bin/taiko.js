@@ -12,6 +12,10 @@ const devices = require('../lib/data/devices').default;
 let repl_mode = false;
 let plugins = new Map();
 
+let data = fs.readFileSync('./package.json', 'utf-8');
+let packageJson = JSON.parse(data);
+let taikoPlugins = Object.keys(packageJson.dependencies || {}).filter( dependencie => dependencie.match(/^taiko-\w+/) );
+let taikoPluginsNames = taikoPlugins.map( pluginName => require(findPluginLocation(pluginName)) ).filter( plugin => plugin.hasOwnProperty('exec') ).map( plugin => plugin.ID );
 function printVersion() {
     const packageJson = require('../package.json');
     return `Version: ${packageJson.version} (Chromium: ${packageJson.taiko.chromium_version})`;
@@ -61,13 +65,7 @@ function getPossibleModulePaths() {
 
 function loadPlugin(plugin) {
     try {
-        let paths = getPossibleModulePaths();
-        let location =  paths.map(p => {
-            if(fs.existsSync(path.join(p, plugin))) {
-                return path.join(p, plugin);
-            }
-        }).filter(function(p){return p;})[0];
-        if (!location) throw new Error(`The plugin ${plugin} is not installed.`);
+        let location = findPluginLocation(plugin);
         let p = require(location);
         taiko.loadPlugin(p.ID, p.clientHandler);
         plugins.set(p.ID, p);
@@ -77,13 +75,63 @@ function loadPlugin(plugin) {
     }
 }
 
+function findPluginLocation(plugin) {
+    let paths = getPossibleModulePaths();
+    let location = paths.map(p => {
+        if (fs.existsSync(path.join(p, plugin))) {
+            return path.join(p, plugin);
+        }
+    }).filter(function (p) { return p; })[0];
+    if (!location)
+        throw new Error(`The plugin ${plugin} is not installed.`);
+    return location;
+}
+
 function loadPlugins(plugins) {
     plugins.split(',').forEach((plugin) => {
         loadPlugin(plugin.trim());
     });
 }
+function isFile(file) {
+    return /.*?\..*/.test(file);
+}
+function exec(program) {
+    const fileName = program.args[0];
+    if (!isFile(fileName)) {
+        let location = findPluginLocation(`taiko-${fileName}`);
+        let plugin = require(location);
+        plugin.exec.apply(null, program.args.slice(1));
+    } else {
+        validate(fileName);
+        const observe = Boolean(program.observe || program.slowMod);
+        if (program.load) {
+            runFile(fileName, true, program.waitTime, (fileName) => {
+                return new Promise((resolve) => {
+                    repl_mode = true;
+                    repl.initialize(plugins, fileName).then((r) => {
+                        let listeners = r.listeners('exit');
+                        r.removeAllListeners('exit');
+                        r.on('exit', () => {
+                            listeners.forEach((l) => r.addListener('exit', l));
+                            resolve();
+                        });
+                    });
+                });
+            });
+        } else {
+            runFile(fileName, observe, program.waitTime);
+        }
+    }
 
+}
 if (isTaikoRunner(process.argv[1])) {
+    taikoPluginsNames.forEach( pluginId => {
+        program
+            .command(`${pluginId}`)
+            .action( ( ) => {
+                console.log(`Inside ${pluginId}`);
+            });
+    });
     program
         .version(printVersion(), '-v, --version')
         .usage(`[options]
@@ -107,40 +155,18 @@ if (isTaikoRunner(process.argv[1])) {
             '--plugin <plugin1,plugin2...>',
             'Load the taiko plugin.',
             loadPlugins
-        )
-        .action(function () {
-            if (program.args.length) {
-                const fileName = program.args[0];
-                validate(fileName);
-                const observe = Boolean(program.observe || program.slowMod);
-                if (program.load) {
-                    runFile(fileName, true, program.waitTime, (fileName) => {
-                        return new Promise((resolve) => {
-                            repl_mode = true;
-                            repl.initialize(plugins, fileName).then((r) => {
-                                let listeners = r.listeners('exit');
-                                r.removeAllListeners('exit');
-                                r.on('exit', () => {
-                                    listeners.forEach((l) => r.addListener('exit', l));
-                                    resolve();
-                                });
-                            });
-                        });
-                    });
-                } else {
-                    runFile(fileName, observe, program.waitTime);
-                }
-            } else {
-                repl_mode = true;
-                repl.initialize(plugins);
-            }
-        });
+        );
     program.unknownOption = (option) => {
         console.error('error: unknown option `%s', option);
         program.outputHelp();
         process.exit(1);
     };
     program.parse(process.argv);
+    if (program.args.length < 1) {
+        repl_mode = true;
+        repl.initialize(plugins);
+    } else
+        exec(program);
 } else {
     module.exports = taiko;
 }
